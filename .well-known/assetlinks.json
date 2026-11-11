@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "com.mupglobal.pv",
+        "sha256_cert_fingerprints": ["33:4E:4E:1F:E5:D9:14:D8:4F:DA:6C:7F:3C:56:08:9E:79:90:5B:2F:C9:C1:BD:06:D0:00:6D:A5:83:2A:D5:80"]
+      }
+    }]
