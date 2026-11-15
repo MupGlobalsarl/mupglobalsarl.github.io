@@ -1,5 +1,5 @@
 /* MUPGLOBAL SARL – MupGlobal Électricité : disponible hors connexion, mise à jour automatique quand Internet est disponible */
-const CACHE = "mupglobal-elec-202611151808";
+const CACHE = "mupglobal-elec-202611151826";
 const FONTS = "mupglobal-elec-fonts";
 const FILES = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./icon-maskable-192.png", "./icon-maskable-512.png", "./apple-touch-icon.png"];
 self.addEventListener("install", (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).then(() => self.skipWaiting())); });

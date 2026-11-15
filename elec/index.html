@@ -285,9 +285,29 @@ try{DB=JSON.parse(localStorage.getItem(KEY)||'null')}catch(e){DB=null}
 try{PR=JSON.parse(localStorage.getItem(KEY+'-prix')||'{}')||{}}catch(e){PR={}}
 if(!DB||!DB.list||!Object.keys(DB.list).length){const id='p'+Date.now().toString(36);DB={cur:id,list:{[id]:clone(EXAMPLE)}}}
 if(!DB.list[DB.cur])DB.cur=Object.keys(DB.list)[0];
+/* Validation stricte : toute valeur venant du stockage ou d'un fichier importé est bornée ou remplacée (correctif red team S1) */
+const clampN=(v,a,b,d)=>{v=parseFloat(String(v).replace(',','.'));return isFinite(v)?Math.min(b,Math.max(a,v)):d};
+const clampI=(v,a,b,d)=>Math.round(clampN(v,a,b,d));
+const str=(v,n)=>String(v==null?'':v).replace(/[<>"`]/g,'').slice(0,n);
+const oneOf=(v,list,d)=>list.map(String).includes(String(v))?(typeof d==='number'?+v:String(v)):d;
+function fix(p){
+  p=p&&typeof p==='object'?p:{};const b=BLANK(),t=p.terre||{},dv=p.devis||{};
+  return {name:str(p.name??b.name,120)||'Projet',lieu:str(p.lieu??b.lieu,120),auteur:str(p.auteur??b.auteur,120),
+    alim:oneOf(p.alim,['mono','tri'],'mono'),pose:oneOf(p.pose,['B','C'],'B'),temp:oneOf(p.temp,['25','30','35','40','45'],'30'),
+    ks:(p.ks==null||p.ks==='auto')?'auto':String(clampN(p.ks,0.3,1,0.8)),res:clampN(p.res,0,100,20),lbr:clampN(p.lbr,1,1000,15),tabRoom:clampI(p.tabRoom,0,59,0),
+    circuits:(Array.isArray(p.circuits)?p.circuits:[]).slice(0,60).map(c=>{c=c&&typeof c==='object'?c:{};return {name:str(c.name,80)||'Circuit',
+      type:Object.prototype.hasOwnProperty.call(TYPES,c.type)?c.type:'autre',n:clampI(c.n,0,99,1),pu:clampN(c.pu,0,100000,0),L:clampN(c.L,0,1000,0),ph:oneOf(c.ph,['auto','L1','L2','L3'],'auto')}}),
+    rooms:(Array.isArray(p.rooms)?p.rooms:[]).slice(0,60).map(r=>{r=r&&typeof r==='object'?r:{};return {name:str(r.name,60)||'Pièce',L:clampN(r.L,0,100,3),W:clampN(r.W,0,100,3),
+      lum:clampI(r.lum,0,99,0),int:clampI(r.int,0,99,0),pc:clampI(r.pc,0,99,0),spe:str(r.spe,120)}}),
+    terre:{rho:clampN(t.rho,1,10000,300),idn:oneOf(t.idn,['0.5','0.3','0.03'],0.5),ul:oneOf(t.ul,['50','25'],50),perim:clampN(t.perim,0,2000,0),npiq:clampI(t.npiq,0,20,1),lpiq:clampN(t.lpiq,0,20,2)},
+    devis:{dev:String(dv.dev||'USD').replace(/[^A-Za-z$€]/g,'').slice(0,6)||'USD',mo:clampN(dv.mo,0,300,35),fr:clampN(dv.fr,0,100,5),tva:oneOf(dv.tva,['16','0'],16)}};
+}
+function cleanPR(o){const r={};if(o&&typeof o==='object')for(const k in o){const v=parseFloat(o[k]);if(isFinite(v)&&v>=0&&v<1e7&&k.length<200)r[k]=v}return r}
+for(const k of Object.keys(DB.list))DB.list[k]=fix(DB.list[k]);
+PR=cleanPR(PR);
+DB.issuer=Object.assign({name:'',adr:'',tel:'',rccm:''},DB.issuer&&typeof DB.issuer==='object'?DB.issuer:{});
+for(const k of ['name','adr','tel','rccm'])DB.issuer[k]=str(DB.issuer[k],120);
 let S=DB.list[DB.cur];
-function fix(p){const b=BLANK();for(const k in b)if(p[k]==null)p[k]=b[k];p.terre=Object.assign(b.terre,p.terre);p.devis=Object.assign(b.devis,p.devis);return p}
-Object.values(DB.list).forEach(fix);
 function save(){try{localStorage.setItem(KEY,JSON.stringify(DB));localStorage.setItem(KEY+'-prix',JSON.stringify(PR))}catch(e){}}
 
 /* ================= Utilitaires ================= */
@@ -344,6 +364,13 @@ function compute(){
   const Lbr=Math.max(1,+S.lbr||1),duf=s=>(triSupply?1:2)*RHO*Lbr*Ibf*cosm/s/230*100;
   while(duf(SECS[sf])>1&&sf<SECS.length-1)sf++;
   const feed={Ib:Ibf,In:Inf,In0,maxDown,sec:SECS[sf],du:duf(SECS[sf]),iz:izOf(sf,nf)};
+  /* Domaine de validité du logiciel : habitation et petit tertiaire (correctif red team) */
+  const horsDomaine=[];
+  if(Inf>250)horsDomaine.push(`appareil général de ${Inf} A (250 A au plus)`);
+  cs.filter(x=>!x.tri&&x.In>63).forEach(x=>horsDomaine.push(`circuit ${x.i+1} protégé en ${x.In} A (63 A au plus en 1P+N)`));
+  cs.filter(x=>x.tri&&x.In>125).forEach(x=>horsDomaine.push(`circuit ${x.i+1} protégé en ${x.In} A (125 A au plus)`));
+  if(horsDomaine.length)alerts.push(['bad',`Hors du domaine du logiciel (habitation et petit tertiaire) : ${horsDomaine.join(' ; ')}. Faites réaliser cette étude avec un logiciel adapté : la note de calcul ne sera pas imprimée.`]);
+  if(!triSupply&&Inf>63)alerts.push(['warn',`AGCP monophasé de ${Inf} A : au-delà de 63 A, un branchement triphasé est en général préférable. Vérifiez auprès de la SNEL.`]);
   // Sections et chutes de tension
   cs.forEach(x=>{
     const t=x.t,nc=x.tri?3:2;
@@ -390,7 +417,7 @@ function compute(){
   const terre={Rmax,Rvis,Rb,Rp1,Rp,np,Rt,ok:Rt<=Rvis,pe,ct:Math.max(16,pe),lep:Math.min(25,Math.max(6,pe/2)),
     need:isFinite(Rp1)?Math.max(1,Math.ceil(Rp1*1.2/Rvis)):0};
   if(!terre.ok)alerts.push(['bad',`Prise de terre : ${isFinite(Rt)?fr(Rt,1)+' Ω':'non définie'} pour ${fr(Rvis)} Ω maximum. Ajoutez des piquets ou une boucle à fond de fouille.`]);
-  return {cs,Pinst,Pku,Pgen,Pspe,Pd,PdOld,ks,nGen,res,cosm,Skva,feed,load,imbal,diffs,mod:{modDisj,modDiff,modGen,modTot,rows},alerts,triSupply,terre};
+  return {cs,Pinst,Pku,Pgen,Pspe,Pd,PdOld,ks,nGen,res,cosm,Skva,feed,load,imbal,diffs,mod:{modDisj,modDiff,modGen,modTot,rows},alerts,triSupply,terre,horsDomaine};
 }
 
 /* ================= Nomenclature et devis ================= */
@@ -486,7 +513,7 @@ function kpi(k,v,u,n,hl){return `<div class="kpi${hl?' hl':''}"><div class="k">$
 function vAccueil(){
   const f=R.feed,t=totals(buildBom(R));
   const nb=R.alerts.filter(a=>a[0]==='bad').length,nw=R.alerts.filter(a=>a[0]==='warn').length;
-  const al=R.alerts.length?R.alerts:[['ok','Toutes les vérifications sont satisfaites.']];
+  const al=R.alerts.length?R.alerts:[['ok','Aucune alerte sur les contrôles du logiciel. Les courts-circuits et la sélectivité ne sont pas encore vérifiés.']];
   const ids=Object.keys(DB.list);
   return `${installCard()}
   <div class="card"><div class="row"><div style="min-width:0"><h2>${esc(S.name)}</h2><p class="sub">${esc(S.lieu)} · ${S.alim==='tri'?'Triphasé 400 V':'Monophasé 230 V'} · ${R.cs.length} circuits</p></div>
@@ -500,7 +527,7 @@ function vAccueil(){
     ${kpi('Devis TTC',fr(t.ttc),esc(S.devis.dev),`dont matériel ${fr(t.mat)}`)}
   </div>
   <div class="card"><div class="row" style="margin-bottom:10px"><h2>Points de contrôle</h2>
-    <span>${nb?`<span class="pill bad">${nb} bloquant${nb>1?'s':''}</span> `:''}${nw?`<span class="pill warn">${nw} à revoir</span>`:''}${!nb&&!nw?'<span class="pill ok">Conforme</span>':''}</span></div>
+    <span>${nb?`<span class="pill bad">${nb} bloquant${nb>1?'s':''}</span> `:''}${nw?`<span class="pill warn">${nw} à revoir</span>`:''}${!nb&&!nw?'<span class="pill ok">Contrôles OK</span>':''}</span></div>
     <ul class="alerts">${al.map(a=>`<li class="${a[0]}">${esc(a[1])}</li>`).join('')}</ul></div>
   <div class="card"><h2>Documents</h2><p class="sub" style="margin-bottom:12px">Note de calcul et devis datés, à enregistrer en PDF ou à imprimer.</p>
     <div class="btns grow"><button type="button" class="primary" data-act="note">Note de calcul (PDF)</button><button type="button" data-act="devispdf">Devis (PDF)</button><button type="button" data-act="share">Partager le rapport</button></div></div>
@@ -525,7 +552,10 @@ function vAccueil(){
 function fld(id,label,val,type='text',extra=''){return `<label class="f${extra.includes('full')?' full':''}">${label}<input id="${id}" type="${type}" value="${esc(val)}" ${type==='number'?'inputmode="decimal" step="any"':''}></label>`}
 function sel(id,label,val,opts,cls=''){return `<label class="f ${cls}">${label}<select id="${id}">${opts.map(o=>`<option value="${o[0]}"${String(val)===String(o[0])?' selected':''}>${o[1]}</option>`).join('')}</select></label>`}
 function vProjet(){
-  return `<div class="card"><h2>Projet</h2><p class="sub" style="margin-bottom:12px">Ces informations figurent sur le rapport et le devis.</p>
+  const I=DB.issuer;
+  return `<div class="card"><h2>Entreprise émettrice des documents</h2><p class="sub" style="margin-bottom:12px">Imprimée en tête des notes de calcul et des devis, qui sont établis sous sa responsabilité. Ce réglage vaut pour tous les projets de ce téléphone.</p>
+    <div class="fgrid">${fld('i_name','Raison sociale',I.name,'text','full')}${fld('i_adr','Adresse',I.adr,'text','full')}${fld('i_tel','Téléphone',I.tel)}${fld('i_rccm','RCCM ou Id. nat.',I.rccm)}</div></div>
+  <div class="card"><h2>Projet</h2><p class="sub" style="margin-bottom:12px">Ces informations figurent sur le rapport et le devis.</p>
     <div class="fgrid">${fld('p_name','Client / ouvrage',S.name,'text','full')}${fld('p_lieu','Localisation',S.lieu,'text','full')}${fld('p_auteur','Réalisé par',S.auteur,'text','full')}</div></div>
   <div class="card"><h2>Hypothèses de calcul</h2><p class="sub" style="margin-bottom:12px">Valeurs courantes pour un bâtiment raccordé au réseau SNEL.</p>
     <div class="fgrid">
@@ -567,7 +597,7 @@ function vCalculs(){
   const segs=[['circuits','Circuits'],['phases','Phases'],['branchement','Branchement'],['tableau','Tableau'],['terre','Terre']];
   let body='';
   if(calcSeg==='circuits'){
-    body=R.cs.length?`<div class="res">${R.cs.map(x=>`<div class="rc"><div class="hd"><span class="num">${pad2(x.i+1)}</span><b>${esc(x.c.name)}</b><span class="ph ${x.phase}">${x.phase==='T'?'Tri':x.phase}</span><span class="pill ${x.status}">${x.status==='ok'?'Conforme':x.status==='warn'?'À revoir':'Non conforme'}</span></div>
+    body=R.cs.length?`<div class="res">${R.cs.map(x=>`<div class="rc"><div class="hd"><span class="num">${pad2(x.i+1)}</span><b>${esc(x.c.name)}</b><span class="ph ${x.phase}">${x.phase==='T'?'Tri':x.phase}</span><span class="pill ${x.status}">${x.status==='ok'?'Contrôles OK':x.status==='warn'?'À revoir':'Non conforme'}</span></div>
       <div class="vals"><div><span>Ib</span><strong>${fr(x.Ib,1)} A</strong></div><div><span>Disj.</span><strong>${x.curve}${x.In}</strong></div><div><span>Câble</span><strong>${x.ncond}G${fsec(x.sec)}</strong></div><div><span>ΔU</span><strong>${fr(x.duTot,2)}%</strong></div></div>
       <p class="note" style="margin-top:6px">${fr(x.P)} W · Iz ${fr(x.iz,1)} A · ${x.id} · ΔU maxi ${x.lim} %${x.t.motor?` · rendement ${fr(x.eff,2)} · ΔU démarrage ${fr(x.duStart,1)} %`:''}</p></div>`).join('')}</div>`:`<div class="empty">Aucun circuit à calculer.</div>`;
   }else if(calcSeg==='phases'){
@@ -839,7 +869,8 @@ $('view').addEventListener('click',e=>{
 $('view').addEventListener('input',e=>{
   const t=e.target,id=t.id;if(!id)return;
   const nv=()=>t.type==='number'?(parseFloat(String(t.value).replace(',','.'))||0):t.value;
-  if(id.startsWith('p_')&&id!=='p_tab'){const k=id.slice(2);S[k]=nv();$('hdTitle').textContent=S.name||'Projet sans nom';liveProjet();save()}
+  if(id.startsWith('i_')){DB.issuer[id.slice(2)]=str(t.value,120);save()}
+  else if(id.startsWith('p_')&&id!=='p_tab'){const k=id.slice(2);S[k]=nv();$('hdTitle').textContent=S.name||'Projet sans nom';liveProjet();save()}
   else if(id.startsWith('t_')){S.terre[id.slice(2)]=nv();R=compute();$('terreRes').innerHTML=terreRes();save()}
   else if(id.startsWith('d_')){S.devis[id.slice(2)]=nv();$('devTot').innerHTML=devTot(buildBom(R));save()}
   else if(id.startsWith('pr')){const d=t.dataset.d;if(t.value==='')delete PR[d];else PR[d]=nv();const bom=buildBom(R),j=+id.slice(2);$('dt'+j).textContent=fr(bom[j][1]*priceOf(bom[j][0]),2);$('devTot').innerHTML=devTot(bom);save()}
@@ -862,7 +893,7 @@ function copy(text,msg){
 }
 function reportText(){
   R=compute();const f=R.feed,t=R.terre,bom=buildBom(R),T=totals(bom),dv=S.devis.dev,L=[];
-  L.push(`MUPGLOBAL SARL — Étude électrique bâtiment (MupGlobal Électricité ${APPV})`);L.push(`Ouvrage : ${S.name}`);L.push(`Lieu : ${S.lieu}`);L.push(`Réalisé par : ${S.auteur}`);L.push(`Date : ${new Date().toLocaleDateString('fr-FR')}`);L.push('');
+  L.push(`${DB.issuer.name||'Entreprise non renseignée'} — Étude électrique bâtiment (logiciel MG Électricité ${APPV})`);L.push(`Ouvrage : ${S.name}`);L.push(`Lieu : ${S.lieu}`);L.push(`Réalisé par : ${S.auteur}`);L.push(`Date : ${new Date().toLocaleDateString('fr-FR')}`);L.push('');
   L.push('BILAN DE PUISSANCE');L.push(`Installée : ${fr(R.Pinst)} W · Pointe : ${fr(R.Pd)} W (${fr(R.Skva,1)} kVA) · ks ${fr(R.ks,2)} sur éclairage et prises · réserve ${fr(R.res*100)} %`);
   if(R.triSupply)L.push(`Phases : L1 ${fr(R.load.L1)} W · L2 ${fr(R.load.L2)} W · L3 ${fr(R.load.L3)} W · déséquilibre ${fr(R.imbal,1)} %`);
   L.push(`Branchement : ${R.triSupply?'triphasé 400 V':'monophasé 230 V'} · AGCP ${R.triSupply?'4P':'2P'} ${f.In} A 500 mA type S · U1000 R2V ${R.triSupply?'5G':'3G'}${fsec(f.sec)} mm² · ΔU ${fr(f.du,2)} %`);L.push('');
@@ -886,7 +917,7 @@ function devisCsv(){
 }
 
 /* ================= Version, fichiers, partage ================= */
-const APPV='V1.1';
+const APPV='V1.2';
 const slug=s=>String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/gi,'-').replace(/^-|-$/g,'').slice(0,40)||'projet';
 function download(name,text,type='application/json'){
   try{const b=new Blob([text],{type}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;document.body.appendChild(a);a.click();
@@ -901,7 +932,7 @@ function download(name,text,type='application/json'){
       try{
         const o=JSON.parse(rd.result);let n=0,last=null;
         const addP=p=>{if(!p||!Array.isArray(p.circuits))return;const id='p'+Date.now().toString(36)+(n++);DB.list[id]=fix(p);last=id};
-        if(o&&o.type==='sauvegarde'&&o.list){Object.values(o.list).forEach(addP);if(o.prices)Object.assign(PR,o.prices)}
+        if(o&&o.type==='sauvegarde'&&o.list){Object.values(o.list).forEach(addP);if(o.prices)Object.assign(PR,cleanPR(o.prices))}
         else if(o&&o.project)addP(o.project);
         else if(o&&Array.isArray(o.circuits))addP(o);
         if(!last)throw new Error('vide');
@@ -921,22 +952,24 @@ async function shareReport(){
 /* ================= Note de calcul et devis imprimables ================= */
 function docHead(title,code){
   const d=new Date(),no=`${code}-${d.getFullYear()}${pad2(d.getMonth()+1)}${pad2(d.getDate())}-${pad2(d.getHours())}${pad2(d.getMinutes())}`;
-  return `<header class="pr-head"><div><div class="pr-co">MUPGLOBAL SARL</div><div class="pr-mut">Installations électriques et photovoltaïques · Lubumbashi, RD Congo</div></div>
+  const I=DB.issuer;
+  return `<header class="pr-head"><div><div class="pr-co">${esc(I.name)}</div><div class="pr-mut">${esc([I.adr,I.tel,I.rccm?'RCCM / Id. nat. '+I.rccm:''].filter(Boolean).join(' · '))}</div></div>
     <div class="pr-right"><div class="pr-title">${title}</div><div class="pr-mut">N° ${no} · ${d.toLocaleDateString('fr-FR')}</div></div></header>
     <table class="pr-kv"><tr><th>Ouvrage</th><td>${esc(S.name)}</td><th>Lieu</th><td>${esc(S.lieu)}</td></tr>
     <tr><th>Établi par</th><td>${esc(S.auteur)}</td><th>Logiciel</th><td>MupGlobal Électricité ${APPV}</td></tr></table>`;
 }
+function respMention(){const n=esc(DB.issuer.name);return /mupglobal/i.test(DB.issuer.name)?`Document établi par ${n} avec le logiciel MG Électricité ${APPV}.`:`Document établi sous la seule responsabilité de ${n}. MUPGLOBAL SARL, éditeur du logiciel MG Électricité, n'est pas partie à ce document.`}
 const prDl=rows=>`<table class="pr-t pr-dl">${rows.map(r=>`<tr><th>${r[0]}</th><td>${r[1]}</td></tr>`).join('')}</table>`;
 function noteHTML(){
   const f=R.feed,t=R.terre,om=v=>isFinite(v)?fr(v,1)+' Ω':'—',u=svgUnif();
-  const al=R.alerts.length?R.alerts:[['ok','Toutes les vérifications du programme sont satisfaites.']];
+  const al=R.alerts.length?R.alerts:[['ok','Aucune alerte sur les contrôles réalisés par le logiciel.']];
   return docHead('Note de calcul électrique','NC')+`
-  <h2>1. Hypothèses</h2>${prDl([['Alimentation',R.triSupply?'Triphasé 400 V + N, 50 Hz':'Monophasé 230 V, 50 Hz'],['Schéma des liaisons à la terre','TT'],['Mode de pose',S.pose==='B'?'Encastré sous conduit (méthode B)':'Apparent ou chemin de câbles (méthode C)'],['Température ambiante',S.temp+' °C'],['Conducteurs','Cuivre, isolant PVC'],['Réserve d\'extension',fr(R.res*100)+' %'],['Liaison compteur → tableau',fr(+S.lbr||0)+' m']])}
+  <h2>1. Hypothèses</h2>${prDl([['Alimentation',R.triSupply?'Triphasé 400 V + N, 50 Hz':'Monophasé 230 V, 50 Hz'],['Schéma des liaisons à la terre','TT'],['Mode de pose',S.pose==='B'?'Encastré sous conduit (méthode B)':'Apparent ou chemin de câbles (méthode C)'],['Température ambiante',esc(S.temp)+' °C'],['Conducteurs','Cuivre, isolant PVC'],['Réserve d\'extension',fr(R.res*100)+' %'],['Liaison compteur → tableau',fr(+S.lbr||0)+' m']])}
   <h2>2. Bilan de puissance et branchement</h2>${prDl([['Puissance installée',fr(R.Pinst)+' W'],['Appareils spécialisés (après ku)',fr(R.Pspe)+' W'],['Éclairage et prises (après ku)',fr(R.Pgen)+' W, ks '+fr(R.ks,2)],['Puissance de pointe',fr(R.Pd)+' W, soit '+fr(R.Skva,1)+' kVA (cos φ '+fr(R.cosm,2)+')'],['Courant d\'emploi de l\'arrivée',fr(f.Ib,1)+' A'+(R.triSupply?' (phase la plus chargée)':'')],['Appareil général (AGCP)',`${R.triSupply?'4P':'2P'} ${f.In} A, différentiel 500 mA type S`],['Plus gros disjoncteur aval',f.maxDown+' A'],['Câble d\'arrivée',`U1000 R2V ${R.triSupply?'5G':'3G'}${fsec(f.sec)} mm², Iz ${fr(f.iz,1)} A, ΔU ${fr(f.du,2)} %`]])}
   ${R.triSupply?`<p>Charges par phase (après ku) : L1 ${fr(R.load.L1)} W · L2 ${fr(R.load.L2)} W · L3 ${fr(R.load.L3)} W · déséquilibre ${fr(R.imbal,1)} %.</p>`:''}
   <h2>3. Circuits</h2>
   <table class="pr-t"><thead><tr><th>N°</th><th>Désignation</th><th>Ph.</th><th class="r">P (W)</th><th class="r">Ib (A)</th><th>Protection</th><th>Câble Cu</th><th class="r">Iz (A)</th><th class="r">L (m)</th><th class="r">ΔU</th><th>Diff.</th><th>État</th></tr></thead><tbody>
-  ${R.cs.map(x=>`<tr><td>${pad2(x.i+1)}</td><td>${esc(x.c.name)}<br><small>${esc(x.t.label)}${x.t.motor?', rendement '+fr(x.eff,2):''}</small></td><td>${x.phase==='T'?'Tri':x.phase}</td><td class="r">${fr(x.P)}</td><td class="r">${fr(x.Ib,1)}</td><td>${x.tri?'4P':'1P+N'} ${x.curve}${x.In}</td><td>${x.ncond}G${fsec(x.sec)}</td><td class="r">${fr(x.iz,1)}</td><td class="r">${fr(x.L)}</td><td class="r">${fr(x.duTot,2)} %</td><td>${x.id}</td><td>${x.status==='ok'?'Conforme':x.status==='warn'?'À revoir':'Non conforme'}</td></tr>`).join('')}
+  ${R.cs.map(x=>`<tr><td>${pad2(x.i+1)}</td><td>${esc(x.c.name)}<br><small>${esc(x.t.label)}${x.t.motor?', rendement '+fr(x.eff,2):''}</small></td><td>${x.phase==='T'?'Tri':x.phase}</td><td class="r">${fr(x.P)}</td><td class="r">${fr(x.Ib,1)}</td><td>${x.tri?'4P':'1P+N'} ${x.curve}${x.In}</td><td>${x.ncond}G${fsec(x.sec)}</td><td class="r">${fr(x.iz,1)}</td><td class="r">${fr(x.L)}</td><td class="r">${fr(x.duTot,2)} %</td><td>${x.id}</td><td>${x.status==='ok'?'Contrôles OK':x.status==='warn'?'À revoir':'Non conforme'}</td></tr>`).join('')}
   </tbody></table>
   <h2>4. Tableau de répartition</h2>
   <table class="pr-t"><thead><tr><th>Différentiel 30 mA</th><th>Phase</th><th>Circuits</th></tr></thead><tbody>
@@ -948,6 +981,7 @@ function noteHTML(){
   <h2>7. Méthode et limites</h2>
   <p>Courant d'emploi Ib = P / (U·cos φ·η). Protection : Ib ≤ In ≤ Iz·kθ, courants admissibles selon la CEI 60364-5-52 (méthodes B et C, PVC). Chute de tension : ΔU = b·ρ·L·Ib·cos φ / S, limites cumulées depuis le compteur de 3 % pour l'éclairage et 5 % pour les autres usages. Puissance de pointe : appareils spécialisés à 100 % après ku, éclairage et prises affectés du coefficient ks.</p>
   <p><b>Non couvert par cette version :</b> courants de court-circuit et pouvoir de coupure, contraintes thermiques, sélectivité détaillée, facteurs de groupement. Ces points sont à vérifier avec un logiciel de référence ou par un bureau de contrôle avant exécution.</p>
+  <p class="pr-mut">${respMention()}</p>
   <section class="pr-sign"><div>Établi par<br><br>Nom et signature</div><div>Vérifié par<br><br>Nom et signature</div></section>
   <section class="pr-land"><h2>8. Schéma unifilaire</h2>
   <div class="pr-sch"><svg class="sch" viewBox="0 0 ${u.W} ${u.H}" width="100%" preserveAspectRatio="xMidYMin meet">${u.o}</svg></div></section>`;
@@ -960,10 +994,13 @@ function devisHTML(){
   </tbody></table>
   <table class="pr-t pr-tot">${[['Matériel',tt.mat],[`Main-d'œuvre (${fr(+D.mo||0)} %)`,tt.mo],[`Transport et petites fournitures (${fr(+D.fr||0)} %)`,tt.frs],['Total hors taxes',tt.ht],[`TVA (${fr(+D.tva||0)} %)`,tt.tva]].map(r=>`<tr><th>${r[0]}</th><td class="r">${fr(r[1],2)} ${dv}</td></tr>`).join('')}<tr class="pr-grand"><th>Total TTC</th><td class="r">${fr(tt.ttc,2)} ${dv}</td></tr></table>
   <p>Quantités issues de l'étude électrique du projet. Prix unitaires à confirmer au moment de la commande.</p>
-  <section class="pr-sign"><div>Pour MUPGLOBAL SARL<br><br>Nom et signature</div><div>Bon pour accord, le client<br><br>Date et signature</div></section>`;
+  <p class="pr-mut">${respMention()}</p>
+  <section class="pr-sign"><div>Pour ${esc(DB.issuer.name)}<br><br>Nom et signature</div><div>Bon pour accord, le client<br><br>Date et signature</div></section>`;
 }
 function printDoc(kind){
   R=compute();
+  if(!DB.issuer.name.trim()){toast('Renseignez d\'abord l\'entreprise émettrice des documents');location.hash='#projet';return}
+  if(kind==='note'&&R.horsDomaine.length){toast('Étude hors du domaine du logiciel : la note de calcul n\'est pas imprimée');return}
   let el=$('print');if(!el){el=document.createElement('div');el.id='print';document.body.appendChild(el)}
   el.innerHTML=kind==='devis'?devisHTML():noteHTML();
   const old=document.title;document.title=(kind==='devis'?'Devis ':'Note de calcul ')+S.name;
