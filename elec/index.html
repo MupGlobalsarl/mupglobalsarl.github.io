@@ -12,6 +12,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MG Électricité">
+<script src="nacl-fast.min.js"></script>
 <style>
 :root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 html,body{min-height:100%}
@@ -197,6 +198,8 @@ textarea#fb{width:100%;height:200px;font:12px var(--f-mono);background:var(--bg)
   .pr-sign div{flex:1;border:.5pt solid #999;min-height:64pt;padding:6pt;font-size:9pt}
   @page land{size:A4 landscape;margin:10mm}
   .pr-land{page:land;break-before:page}
+  .pr-trial{border:1.5pt solid #B23636;color:#B23636;font-weight:800;text-align:center;padding:4pt;margin:6pt 0;font-size:10pt}
+  .pr-wm{position:fixed;top:42%;left:0;right:0;text-align:center;font:800 54pt "Archivo",Arial,sans-serif;color:rgba(178,54,54,.13);transform:rotate(-28deg);z-index:0;pointer-events:none}
   .pr-sch svg{width:100%;height:auto;max-height:175mm}
   .pr-t td.r{white-space:nowrap}
   #print small{color:#566573}
@@ -502,11 +505,13 @@ function render(){
   R=compute();
   const v=$('view');
   $('hdTitle').textContent=S.name||'Projet sans nom';
-  $('hdEb').textContent={accueil:'Tableau de bord',projet:'Paramètres du projet',circuits:'Circuits',pieces:'Pièces et plan',calculs:'Calculs',schemas:'Schémas',devis:'Devis estimatif'}[route]+' · MupGlobal SARL';
+  $('hdEb').textContent={accueil:'Tableau de bord',projet:'Paramètres du projet',circuits:'Circuits',pieces:'Pièces et plan',calculs:'Calculs',schemas:'Schémas',devis:'Devis estimatif'}[route]+' · '+licLabel();
   const fab=$('fab');fab.hidden=!(route==='circuits'||route==='pieces');
   $('fabTxt').textContent=route==='circuits'?'Circuit':'Pièce';
   v.innerHTML=({accueil:vAccueil,projet:vProjet,circuits:vCircuits,pieces:vPieces,calculs:vCalculs,schemas:vSchemas,devis:vDevis}[route])();
   if(route==='schemas')drawSchema();
+  trialTrack();
+  if(locked()){fab.hidden=true;v.querySelectorAll('input,select,textarea').forEach(el=>{if(!el.closest('#licCard'))el.disabled=true})}
   save();
 }
 function kpi(k,v,u,n,hl){return `<div class="kpi${hl?' hl':''}"><div class="k">${k}</div><div class="v">${v}<small>${u}</small></div><div class="n">${n}</div></div>`}
@@ -515,7 +520,7 @@ function vAccueil(){
   const nb=R.alerts.filter(a=>a[0]==='bad').length,nw=R.alerts.filter(a=>a[0]==='warn').length;
   const al=R.alerts.length?R.alerts:[['ok','Aucune alerte sur les contrôles du logiciel. Les courts-circuits et la sélectivité ne sont pas encore vérifiés.']];
   const ids=Object.keys(DB.list);
-  return `${installCard()}
+  return `${installCard()}${licensed()?'':licCard()}
   <div class="card"><div class="row"><div style="min-width:0"><h2>${esc(S.name)}</h2><p class="sub">${esc(S.lieu)} · ${S.alim==='tri'?'Triphasé 400 V':'Monophasé 230 V'} · ${R.cs.length} circuits</p></div>
     <a class="btnlink sm" href="#projet">Paramètres</a></div></div>
   <div class="kpis">
@@ -547,14 +552,15 @@ function vAccueil(){
       <button type="button" data-act="import">Importer un fichier</button>
     </div>
     <p class="note" style="margin-top:10px">Les projets restent sur ce téléphone. Faites régulièrement une « Sauvegarde complète » et gardez le fichier dans Google Drive ou WhatsApp : il permet de tout retrouver sur un autre appareil avec « Importer un fichier ».</p></div>
-  <p class="note" style="text-align:center">MupGlobal Électricité ${APPV} · MUPGLOBAL SARL, Lubumbashi</p>`;
+  ${licensed()?licCard():''}
+  <p class="note" style="text-align:center">MG Électricité ${APPV} · édité par MUPGLOBAL SARL, Lubumbashi</p>`;
 }
 function fld(id,label,val,type='text',extra=''){return `<label class="f${extra.includes('full')?' full':''}">${label}<input id="${id}" type="${type}" value="${esc(val)}" ${type==='number'?'inputmode="decimal" step="any"':''}></label>`}
 function sel(id,label,val,opts,cls=''){return `<label class="f ${cls}">${label}<select id="${id}">${opts.map(o=>`<option value="${o[0]}"${String(val)===String(o[0])?' selected':''}>${o[1]}</option>`).join('')}</select></label>`}
 function vProjet(){
   const I=DB.issuer;
   return `<div class="card"><h2>Entreprise émettrice des documents</h2><p class="sub" style="margin-bottom:12px">Imprimée en tête des notes de calcul et des devis, qui sont établis sous sa responsabilité. Ce réglage vaut pour tous les projets de ce téléphone.</p>
-    <div class="fgrid">${fld('i_name','Raison sociale',I.name,'text','full')}${fld('i_adr','Adresse',I.adr,'text','full')}${fld('i_tel','Téléphone',I.tel)}${fld('i_rccm','RCCM ou Id. nat.',I.rccm)}</div></div>
+    <div class="fgrid">${licensed()?`<label class="f full">Raison sociale (titulaire de la licence, non modifiable)<input id="i_name_ro" type="text" value="${esc(LIC.name)}" disabled></label>`:fld('i_name','Raison sociale',I.name,'text','full')}${fld('i_adr','Adresse',I.adr,'text','full')}${fld('i_tel','Téléphone',I.tel)}${fld('i_rccm','RCCM ou Id. nat.',I.rccm)}</div></div>
   <div class="card"><h2>Projet</h2><p class="sub" style="margin-bottom:12px">Ces informations figurent sur le rapport et le devis.</p>
     <div class="fgrid">${fld('p_name','Client / ouvrage',S.name,'text','full')}${fld('p_lieu','Localisation',S.lieu,'text','full')}${fld('p_auteur','Réalisé par',S.auteur,'text','full')}</div></div>
   <div class="card"><h2>Hypothèses de calcul</h2><p class="sub" style="margin-bottom:12px">Valeurs courantes pour un bâtiment raccordé au réseau SNEL.</p>
@@ -839,9 +845,10 @@ function arm(btn,label,fn){
 function disarm(){if(!armed)return;clearTimeout(armed.t);if(armed.btn.isConnected)armed.btn.textContent=armed.label;armed=null}
 
 /* ================= Événements ================= */
-$('fab').addEventListener('click',()=>route==='circuits'?editCircuit(null):editRoom(null));
+$('fab').addEventListener('click',()=>{if(locked())return openLic('Essai gratuit terminé : activez votre licence pour modifier vos projets.');route==='circuits'?editCircuit(null):editRoom(null)});
 $('view').addEventListener('click',e=>{
   let b;
+  if((b=e.target.closest('[data-edit-c],[data-edit-r]'))&&locked())return openLic('Essai gratuit terminé : activez votre licence pour modifier vos projets.');
   if((b=e.target.closest('[data-edit-c]')))return editCircuit(+b.dataset.editC);
   if((b=e.target.closest('[data-edit-r]')))return editRoom(+b.dataset.editR);
   if((b=e.target.closest('[data-proj]'))){if(b.dataset.proj!==DB.cur){DB.cur=b.dataset.proj;S=DB.list[DB.cur];render();toast('Projet ouvert')}return}
@@ -850,11 +857,13 @@ $('view').addEventListener('click',e=>{
     if(d===0)zoom[schSeg]=Math.max(0.2,Math.min(2,(box.clientWidth-4)/(+box.dataset.w||1)));
     else zoom[schSeg]=Math.max(0.2,Math.min(3,zoom[schSeg]*(d>0?1.25:0.8)));drawSchema();return}
   if((b=e.target.closest('[data-act]'))){const a=b.dataset.act;
-    if(a==='new'){const id='p'+Date.now().toString(36);DB.list[id]=BLANK();DB.cur=id;S=DB.list[id];location.hash='#projet';if(route==='projet')render();toast('Projet créé')}
-    else if(a==='dup'){const id='p'+Date.now().toString(36);const c=clone(S);c.name=S.name+' (copie)';DB.list[id]=c;DB.cur=id;S=c;render();toast('Projet dupliqué')}
-    else if(a==='ex'){const id='p'+Date.now().toString(36);DB.list[id]=clone(EXAMPLE);DB.cur=id;S=DB.list[id];render();toast('Exemple ajouté')}
+    if(a==='new'){if(!canCreate())return;const id='p'+Date.now().toString(36);DB.list[id]=BLANK();DB.cur=id;S=DB.list[id];location.hash='#projet';if(route==='projet')render();toast('Projet créé')}
+    else if(a==='dup'){if(!canCreate())return;const id='p'+Date.now().toString(36);const c=clone(S);c.name=S.name+' (copie)';DB.list[id]=c;DB.cur=id;S=c;render();toast('Projet dupliqué')}
+    else if(a==='ex'){if(!canCreate())return;const id='p'+Date.now().toString(36);DB.list[id]=clone(EXAMPLE);DB.cur=id;S=DB.list[id];render();toast('Exemple ajouté')}
     else if(a==='del'){if(Object.keys(DB.list).length<2){toast('Gardez au moins un projet : créez-en un autre avant de supprimer celui-ci');return}
       arm(b,'Confirmer : supprimer « '+short(S.name,18)+' »',()=>{delete DB.list[DB.cur];DB.cur=Object.keys(DB.list)[0];S=DB.list[DB.cur];render();toast('Projet supprimé')})}
+    else if(a==='copycode')copy(fmtCode(DEVICE),'Code de l\'appareil copié');
+    else if(a==='activate')activate();
     else if(a==='csv')copy(devisCsv(),'Devis copié au format CSV');
     else if(a==='note')printDoc('note');
     else if(a==='devispdf')printDoc('devis');
@@ -867,7 +876,7 @@ $('view').addEventListener('click',e=>{
   }
 });
 $('view').addEventListener('input',e=>{
-  const t=e.target,id=t.id;if(!id)return;
+  const t=e.target,id=t.id;if(!id||(locked()&&id!=='licKey'))return;
   const nv=()=>t.type==='number'?(parseFloat(String(t.value).replace(',','.'))||0):t.value;
   if(id.startsWith('i_')){DB.issuer[id.slice(2)]=str(t.value,120);save()}
   else if(id.startsWith('p_')&&id!=='p_tab'){const k=id.slice(2);S[k]=nv();$('hdTitle').textContent=S.name||'Projet sans nom';liveProjet();save()}
@@ -893,7 +902,7 @@ function copy(text,msg){
 }
 function reportText(){
   R=compute();const f=R.feed,t=R.terre,bom=buildBom(R),T=totals(bom),dv=S.devis.dev,L=[];
-  L.push(`${DB.issuer.name||'Entreprise non renseignée'} — Étude électrique bâtiment (logiciel MG Électricité ${APPV})`);L.push(`Ouvrage : ${S.name}`);L.push(`Lieu : ${S.lieu}`);L.push(`Réalisé par : ${S.auteur}`);L.push(`Date : ${new Date().toLocaleDateString('fr-FR')}`);L.push('');
+  L.push(`${issuerName()||'Entreprise non renseignée'} — Étude électrique bâtiment (logiciel MG Électricité ${APPV}${licensed()?', licence n° '+String(LIC.serial).padStart(4,'0'):', VERSION D\'ESSAI – sans valeur contractuelle'})`);L.push(`Ouvrage : ${S.name}`);L.push(`Lieu : ${S.lieu}`);L.push(`Réalisé par : ${S.auteur}`);L.push(`Date : ${new Date().toLocaleDateString('fr-FR')}`);L.push('');
   L.push('BILAN DE PUISSANCE');L.push(`Installée : ${fr(R.Pinst)} W · Pointe : ${fr(R.Pd)} W (${fr(R.Skva,1)} kVA) · ks ${fr(R.ks,2)} sur éclairage et prises · réserve ${fr(R.res*100)} %`);
   if(R.triSupply)L.push(`Phases : L1 ${fr(R.load.L1)} W · L2 ${fr(R.load.L2)} W · L3 ${fr(R.load.L3)} W · déséquilibre ${fr(R.imbal,1)} %`);
   L.push(`Branchement : ${R.triSupply?'triphasé 400 V':'monophasé 230 V'} · AGCP ${R.triSupply?'4P':'2P'} ${f.In} A 500 mA type S · U1000 R2V ${R.triSupply?'5G':'3G'}${fsec(f.sec)} mm² · ΔU ${fr(f.du,2)} %`);L.push('');
@@ -917,7 +926,8 @@ function devisCsv(){
 }
 
 /* ================= Version, fichiers, partage ================= */
-const APPV='V1.2';
+const APPV='V1.3';
+const issuerName=()=>licensed()?LIC.name:DB.issuer.name;
 const slug=s=>String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/gi,'-').replace(/^-|-$/g,'').slice(0,40)||'projet';
 function download(name,text,type='application/json'){
   try{const b=new Blob([text],{type}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;document.body.appendChild(a);a.click();
@@ -932,9 +942,10 @@ function download(name,text,type='application/json'){
       try{
         const o=JSON.parse(rd.result);let n=0,last=null;
         const addP=p=>{if(!p||!Array.isArray(p.circuits))return;const id='p'+Date.now().toString(36)+(n++);DB.list[id]=fix(p);last=id};
-        if(o&&o.type==='sauvegarde'&&o.list){Object.values(o.list).forEach(addP);if(o.prices)Object.assign(PR,cleanPR(o.prices))}
-        else if(o&&o.project)addP(o.project);
-        else if(o&&Array.isArray(o.circuits))addP(o);
+        const arr=o&&o.type==='sauvegarde'&&o.list&&typeof o.list==='object'?Object.values(o.list):o&&o.project?[o.project]:o&&Array.isArray(o.circuits)?[o]:[];
+        if(!arr.length)throw new Error('vide');
+        if(!canCreate(arr.length)){fi.value='';return}
+        arr.forEach(addP);if(o.type==='sauvegarde'&&o.prices)Object.assign(PR,cleanPR(o.prices));
         if(!last)throw new Error('vide');
         DB.cur=last;S=DB.list[last];render();toast(n>1?`${n} projets importés`:'Projet importé');
       }catch(e){toast('Fichier non reconnu : choisissez un fichier exporté par MupGlobal Électricité')}
@@ -953,12 +964,13 @@ async function shareReport(){
 function docHead(title,code){
   const d=new Date(),no=`${code}-${d.getFullYear()}${pad2(d.getMonth()+1)}${pad2(d.getDate())}-${pad2(d.getHours())}${pad2(d.getMinutes())}`;
   const I=DB.issuer;
-  return `<header class="pr-head"><div><div class="pr-co">${esc(I.name)}</div><div class="pr-mut">${esc([I.adr,I.tel,I.rccm?'RCCM / Id. nat. '+I.rccm:''].filter(Boolean).join(' · '))}</div></div>
+  return `<header class="pr-head"><div><div class="pr-co">${esc(issuerName())}</div><div class="pr-mut">${esc([I.adr,I.tel,I.rccm?'RCCM / Id. nat. '+I.rccm:''].filter(Boolean).join(' · '))}</div></div>
     <div class="pr-right"><div class="pr-title">${title}</div><div class="pr-mut">N° ${no} · ${d.toLocaleDateString('fr-FR')}</div></div></header>
+    ${licensed()?'':`<div class="pr-trial">VERSION D'ESSAI GRATUIT du logiciel MG Électricité – document sans valeur contractuelle</div><div class="pr-wm">VERSION D'ESSAI</div>`}
     <table class="pr-kv"><tr><th>Ouvrage</th><td>${esc(S.name)}</td><th>Lieu</th><td>${esc(S.lieu)}</td></tr>
     <tr><th>Établi par</th><td>${esc(S.auteur)}</td><th>Logiciel</th><td>MupGlobal Électricité ${APPV}</td></tr></table>`;
 }
-function respMention(){const n=esc(DB.issuer.name);return /mupglobal/i.test(DB.issuer.name)?`Document établi par ${n} avec le logiciel MG Électricité ${APPV}.`:`Document établi sous la seule responsabilité de ${n}. MUPGLOBAL SARL, éditeur du logiciel MG Électricité, n'est pas partie à ce document.`}
+function respMention(){const n=esc(issuerName());const lic=licensed()?`, titulaire de la licence n° ${String(LIC.serial).padStart(4,'0')}`:'';if(!licensed())return `VERSION D'ESSAI GRATUIT du logiciel MG Électricité : document sans valeur contractuelle, établi par ${n}.`;return /mupglobal/i.test(issuerName())?`Document établi par ${n} avec le logiciel MG Électricité ${APPV}.`:`Document établi sous la seule responsabilité de ${n}${lic}. MUPGLOBAL SARL, éditeur du logiciel MG Électricité, n'est pas partie à ce document.`}
 const prDl=rows=>`<table class="pr-t pr-dl">${rows.map(r=>`<tr><th>${r[0]}</th><td>${r[1]}</td></tr>`).join('')}</table>`;
 function noteHTML(){
   const f=R.feed,t=R.terre,om=v=>isFinite(v)?fr(v,1)+' Ω':'—',u=svgUnif();
@@ -995,11 +1007,11 @@ function devisHTML(){
   <table class="pr-t pr-tot">${[['Matériel',tt.mat],[`Main-d'œuvre (${fr(+D.mo||0)} %)`,tt.mo],[`Transport et petites fournitures (${fr(+D.fr||0)} %)`,tt.frs],['Total hors taxes',tt.ht],[`TVA (${fr(+D.tva||0)} %)`,tt.tva]].map(r=>`<tr><th>${r[0]}</th><td class="r">${fr(r[1],2)} ${dv}</td></tr>`).join('')}<tr class="pr-grand"><th>Total TTC</th><td class="r">${fr(tt.ttc,2)} ${dv}</td></tr></table>
   <p>Quantités issues de l'étude électrique du projet. Prix unitaires à confirmer au moment de la commande.</p>
   <p class="pr-mut">${respMention()}</p>
-  <section class="pr-sign"><div>Pour ${esc(DB.issuer.name)}<br><br>Nom et signature</div><div>Bon pour accord, le client<br><br>Date et signature</div></section>`;
+  <section class="pr-sign"><div>Pour ${esc(issuerName())}<br><br>Nom et signature</div><div>Bon pour accord, le client<br><br>Date et signature</div></section>`;
 }
 function printDoc(kind){
   R=compute();
-  if(!DB.issuer.name.trim()){toast('Renseignez d\'abord l\'entreprise émettrice des documents');location.hash='#projet';return}
+  if(!String(issuerName()||'').trim()){toast('Renseignez d\'abord l\'entreprise émettrice des documents');location.hash='#projet';return}
   if(kind==='note'&&R.horsDomaine.length){toast('Étude hors du domaine du logiciel : la note de calcul n\'est pas imprimée');return}
   let el=$('print');if(!el){el=document.createElement('div');el.id='print';document.body.appendChild(el)}
   el.innerHTML=kind==='devis'?devisHTML():noteHTML();
@@ -1025,6 +1037,102 @@ async function doInstall(){
 }
 if('serviceWorker' in navigator&&(location.protocol==='https:'||location.hostname==='localhost'))navigator.serviceWorker.register('sw.js').catch(()=>{});
 
+/* ================= Licence MUPGLOBAL (même format et même clé publique que MUPGLOBAL PV : le générateur hors ligne existant sert tel quel) ================= */
+const LIC_PUB="jdFjx56r4PO6UFErfnrHELJpL9TafKgkP5KmbyXEv0E";
+const LK={dev:"mupglobal_elec_device",lic:"mupglobal_elec_licence",ts:"mupglobal_elec_ts",blk:"mupglobal_elec_blk",tr:"mupglobal_elec_trial"};
+const ALPH="ABCDEFGHJKLMNPQRSTUVWXYZ23456789",EPOCH=Date.UTC(2026,0,1),DAY=86400000,TRIAL_MAX=3,TRIAL_DAYS=15;
+const WA_NUM="243995679353",PHONE="+243 995 679 353";
+const RB_ID="10Bc7sEDwO_B5sf0kvmv_Tsw4tYj7fm4ZTab_X3GAgGQ",RB_GID="1612268612";
+function b64d(s){s=s.replace(/-/g,"+").replace(/_/g,"/");while(s.length%4)s+="=";const b=atob(s),u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return u}
+function codeToBytes(c){let bits=0n;for(const ch of c){const v=ALPH.indexOf(ch);if(v<0)return null;bits=(bits<<5n)|BigInt(v)}const u=new Uint8Array(5);for(let i=4;i>=0;i--){u[i]=Number(bits&255n);bits>>=8n}return u}
+function newCode(){const r=new Uint8Array(8);crypto.getRandomValues(r);return Array.from(r,x=>ALPH[x&31]).join("")}
+const fmtCode=c=>c.slice(0,4)+"-"+c.slice(4);
+let DEVICE=null;
+try{DEVICE=localStorage.getItem(LK.dev);if(!DEVICE||DEVICE.length!==8||!codeToBytes(DEVICE)){DEVICE=newCode();localStorage.setItem(LK.dev,DEVICE)}}catch(e){DEVICE=DEVICE||newCode()}
+function checkKey(raw){
+  try{
+    const s=String(raw||"").replace(/\s+/g,"").replace(/^MUP-?/i,"");
+    if(!s)return {ok:false,why:"vide"};
+    const u=b64d(s);
+    if(u.length<76)return {ok:false,why:"Clé incomplète : vérifiez que tout le texte a été collé."};
+    const pay=u.slice(0,u.length-64),sig=u.slice(u.length-64);
+    if(!window.nacl||!nacl.sign.detached.verify(pay,sig,b64d(LIC_PUB)))return {ok:false,why:"Clé non valide : elle n'a pas été émise par MUPGLOBAL SARL ou elle a été modifiée."};
+    if(pay[0]!==1)return {ok:false,why:"Version de clé non reconnue."};
+    const dev=codeToBytes(DEVICE);
+    for(let i=0;i<5;i++)if(pay[1+i]!==dev[i])return {ok:false,why:`Cette clé a été émise pour un autre appareil. Code de cet appareil pour MG Électricité : ${fmtCode(DEVICE)}.`};
+    const serial=(pay[6]<<8)|pay[7],issued=(pay[8]<<8)|pay[9],exp=(pay[10]<<8)|pay[11];
+    const name=new TextDecoder().decode(pay.slice(12)).replace(/[<>"`]/g,"").slice(0,120);
+    const expDate=exp?new Date(EPOCH+exp*DAY):null;
+    if(expDate&&Math.max(Date.now(),tsMax())>expDate.getTime()+DAY)return {ok:false,expired:true,why:`Licence expirée le ${expDate.toLocaleDateString("fr-FR")}. Contactez MUPGLOBAL SARL pour la renouveler.`,name,serial};
+    return {ok:true,name,serial,issued:new Date(EPOCH+issued*DAY),exp:expDate};
+  }catch(e){return {ok:false,why:"Clé non valide : vérifiez le copier-coller."}}
+}
+/* Horloge : la date la plus récente déjà vue est retenue ; avec Internet, la date du serveur la remplace */
+function tsMax(){let m=0;try{m=Math.max(m,+localStorage.getItem(LK.ts)||0)}catch(e){}try{const c=document.cookie.match(/(?:^|; )mgets=(\d+)/);if(c)m=Math.max(m,+c[1])}catch(e){}return m}
+function tsSave(t,force){t=force?t:Math.max(t,tsMax());try{localStorage.setItem(LK.ts,String(t))}catch(e){}try{document.cookie="mgets="+t+"; max-age=315360000; path=/; SameSite=Lax"}catch(e){}return t}
+tsSave(Date.now());
+let LIC={ok:false},RBLOCK=false;
+try{const raw=localStorage.getItem(LK.lic);if(raw)LIC=checkKey(raw)}catch(e){}
+try{RBLOCK=localStorage.getItem(LK.blk)===DEVICE}catch(e){}
+const licensed=()=>LIC.ok&&!RBLOCK;
+
+/* Essai gratuit : projets comptés dans trois mémoires (stockage, cookie, IndexedDB) scellées ; une suppression ne rend pas de crédit */
+const TR_SALT="MUPGLOBAL·essai·ELEC·2026";
+function trH(o){const s=TR_SALT+"|"+o.d+"|"+o.ids.join(",")+"|"+(o.end?1:0)+"|"+(o.t0||0);let h=0x811c9dc5;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,0x01000193)>>>0}return h.toString(36)}
+function trParse(raw){if(!raw)return null;try{const o=JSON.parse(raw.charAt(0)==="{"?raw:atob(raw));if(!o||!Array.isArray(o.ids))return null;if(o.h!==trH(o))return {d:o.d,ids:o.ids,end:1,t0:o.t0||1};return o}catch(e){return {d:"",ids:[],end:1,t0:1}}}
+function trMerge(list){const v=list.filter(Boolean);if(!v.length)return null;const ids=new Set();let end=0,t0=0;v.forEach(o=>{(o.ids||[]).forEach(i=>ids.add(String(i).slice(0,40)));if(o.end)end=1;if(+o.t0>0)t0=t0?Math.min(t0,+o.t0):+o.t0});return {d:DEVICE,ids:[...ids],end,t0}}
+function trRead(){let a=null,b=null;try{a=trParse(localStorage.getItem(LK.tr))}catch(e){}try{const c=document.cookie.match(/(?:^|; )mgetr=([^;]+)/);if(c)b=trParse(decodeURIComponent(c[1]))}catch(e){}return trMerge([a,b])}
+function trWrite(o){o.d=DEVICE;o.h=trH(o);const raw=btoa(JSON.stringify(o));try{localStorage.setItem(LK.tr,raw)}catch(e){}try{document.cookie="mgetr="+encodeURIComponent(raw)+"; max-age=315360000; path=/; SameSite=Lax"}catch(e){}
+  try{const rq=indexedDB.open("mg_elec_ui",1);rq.onupgradeneeded=()=>rq.result.createObjectStore("k");rq.onsuccess=()=>{try{rq.result.transaction("k","readwrite").objectStore("k").put(raw,"t")}catch(e){}}}catch(e){}}
+function trIdb(cb){try{const rq=indexedDB.open("mg_elec_ui",1);rq.onupgradeneeded=()=>rq.result.createObjectStore("k");rq.onsuccess=()=>{try{const g=rq.result.transaction("k").objectStore("k").get("t");g.onsuccess=()=>cb(trParse(g.result));g.onerror=()=>cb(null)}catch(e){cb(null)}};rq.onerror=()=>cb(null)}catch(e){cb(null)}}
+let TR=trRead()||{d:DEVICE,ids:[],end:0,t0:0};
+const trialUsed=()=>Math.min(TRIAL_MAX,TR.ids.length),trialDaysLeft=()=>TR.t0?Math.max(0,Math.ceil((TR.t0+TRIAL_DAYS*DAY-Math.max(Date.now(),tsMax()))/DAY)):TRIAL_DAYS;
+const trialEnded=()=>!!TR.end||TR.ids.length>TRIAL_MAX||(TR.t0>0&&trialDaysLeft()<=0);
+function trialTrack(){if(licensed())return;const set=new Set(TR.ids),n0=set.size;Object.keys(DB.list).forEach(id=>set.add(id));let ch=set.size!==n0;TR.ids=[...set];if(!TR.t0){TR.t0=Date.now();ch=true}if(TR.ids.length>TRIAL_MAX&&!TR.end){TR.end=1;ch=true}if(ch)trWrite(TR)}
+trIdb(o=>{if(o){const m=trMerge([TR,o]);if(m){TR=m;trWrite(TR);if(!licensed()&&typeof render==="function")render()}}});
+/* Peut-on encore travailler ? Avec licence : oui. En essai : tant que le nombre de projets ne dépasse pas TRIAL_MAX. */
+const locked=()=>!licensed()&&trialEnded();
+function canCreate(n=1){if(licensed())return true;const left=TRIAL_MAX-TR.ids.length;if(left>=n)return true;openLic(`Essai gratuit : ${TRIAL_MAX} projets au plus sur cet appareil (${trialUsed()} utilisés). Activez votre licence pour créer d'autres projets ; vos projets restent consultables.`);return false}
+
+/* Suspension à distance : même feuille Google que MUPGLOBAL PV (code de l'appareil, BLOQUER) */
+async function rbCheck(){
+  if(!LIC.ok||navigator.onLine===false||location.protocol.indexOf("http")!==0)return;
+  let t=null;
+  for(const u of [`https://docs.google.com/spreadsheets/d/${RB_ID}/gviz/tq?tqx=out:csv&gid=${RB_GID}&t=${Date.now()}`,`https://docs.google.com/spreadsheets/d/${RB_ID}/export?format=csv&gid=${RB_GID}&t=${Date.now()}`]){
+    try{const c=new AbortController(),tm=setTimeout(()=>c.abort(),8000);const r=await fetch(u,{cache:"no-store",signal:c.signal});clearTimeout(tm);if(r.ok){const x=await r.text();if(/MUPGLOBAL-BLOCAGE/i.test(x)){t=x;break}}}catch(e){}
+  }
+  if(t===null)return;
+  const blocked=t.split(/\r?\n/).some(l=>{const f=l.split(",").map(x=>x.replace(/"/g,"").trim());return f.length>1&&f[0].replace(/[^A-Z0-9]/gi,"").toUpperCase()===DEVICE&&/^BLOQUER$/i.test(f[1])});
+  try{if(blocked)localStorage.setItem(LK.blk,DEVICE);else localStorage.removeItem(LK.blk)}catch(e){}
+  if(blocked!==RBLOCK){RBLOCK=blocked;render();toast(blocked?"Licence suspendue à distance par MUPGLOBAL SARL":"Licence réactivée par MUPGLOBAL SARL")}
+}
+try{if(navigator.onLine!==false&&location.protocol.indexOf("http")===0)fetch("./version.json?ts="+Date.now(),{cache:"no-store"}).then(r=>{const d=Date.parse(r.headers.get("date")||"");if(d>1.7e12){tsSave(d,true);if(LIC.ok){const c=checkKey(localStorage.getItem(LK.lic));if(!c.ok){LIC=c;render()}}}}).catch(()=>{})}catch(e){}
+setTimeout(rbCheck,2500);
+
+/* Interface */
+const licLabel=()=>licensed()?`Licence n° ${String(LIC.serial).padStart(4,"0")} · ${LIC.name}`:RBLOCK?"Licence suspendue":trialEnded()?"Essai gratuit terminé":`Essai gratuit · ${trialUsed()}/${TRIAL_MAX} projets · ${trialDaysLeft()} j`;
+function licCard(){
+  if(licensed())return `<div class="card"><div class="row"><div style="min-width:0"><h2>Licence active</h2><p class="sub">N° ${String(LIC.serial).padStart(4,"0")} · ${esc(LIC.name)} · ${LIC.exp?"jusqu'au "+LIC.exp.toLocaleDateString("fr-FR"):"permanente"}</p></div><span class="pill ok">Activée</span></div>
+    <p class="note" style="margin-top:8px">Code de cet appareil : <b style="font-family:var(--f-mono)">${fmtCode(DEVICE)}</b></p></div>`;
+  const msg=RBLOCK?"Cette licence a été suspendue à distance par MUPGLOBAL SARL. Contactez-nous pour la réactiver.":LIC.expired?LIC.why:trialEnded()?`Essai gratuit terminé : vos projets d'essai restent consultables, mais ne sont plus modifiables. Activez votre licence pour continuer.`:`Essai gratuit : toutes les fonctions pendant ${TRIAL_DAYS} jours, pour ${TRIAL_MAX} projets au plus (${trialUsed()} utilisé${trialUsed()>1?"s":""}, ${trialDaysLeft()} jour${trialDaysLeft()>1?"s":""} restant${trialDaysLeft()>1?"s":""}). Les documents portent la mention « version d'essai ».`;
+  const wa=`https://wa.me/${WA_NUM}?text=${encodeURIComponent("Bonjour MUPGLOBAL SARL, je souhaite une licence MG Électricité. Code de mon appareil : "+fmtCode(DEVICE))}`;
+  return `<div class="card" id="licCard"><div class="row" style="margin-bottom:6px"><h2>Licence</h2><span class="pill ${trialEnded()||RBLOCK||LIC.expired?"bad":"warn"}">${RBLOCK?"Suspendue":LIC.expired?"Expirée":trialEnded()?"Essai terminé":"Essai gratuit"}</span></div>
+    <p class="sub">${esc(msg)}</p>
+    <div class="row" style="margin:12px 0;padding:10px 12px;background:var(--bg);border-radius:10px"><span class="sub" style="margin:0">Code de cet appareil</span><b style="font-family:var(--f-mono);font-size:18px;letter-spacing:.06em">${fmtCode(DEVICE)}</b><button type="button" class="sm" data-act="copycode">Copier</button></div>
+    <label class="f">Clé de licence reçue<textarea id="licKey" rows="3" style="font:13px var(--f-mono);color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:10px;width:100%" placeholder="MUP-…"></textarea></label>
+    <div class="btns grow" style="margin-top:10px"><button type="button" class="primary" data-act="activate">Activer la licence</button><a class="btnlink" href="${wa}" target="_blank" rel="noopener">Demander ma clé par WhatsApp</a></div>
+    <p class="note" style="margin-top:8px">Une licence par appareil. MUPGLOBAL SARL · ${PHONE}</p></div>`;
+}
+function openLic(m){if(m)toast(m);if(route!=="accueil")location.hash="#accueil";setTimeout(()=>{const c=$("licCard");if(c)c.scrollIntoView({behavior:"smooth",block:"start"})},120)}
+function activate(){
+  const raw=($("licKey")||{}).value||"";const r=checkKey(raw);
+  if(!r.ok){toast(r.why==="vide"?"Collez d'abord la clé reçue de MUPGLOBAL SARL":r.why);return}
+  try{localStorage.setItem(LK.lic,raw.trim())}catch(e){}
+  LIC=r;RBLOCK=false;try{localStorage.removeItem(LK.blk)}catch(e){}
+  DB.issuer.name=r.name;save();render();toast(`Licence n° ${String(r.serial).padStart(4,"0")} activée : ${r.name}`);setTimeout(rbCheck,500);
+}
+
+trialTrack();
 go();
 </script>
 

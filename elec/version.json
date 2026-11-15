@@ -1,10 +1,11 @@
 {
- "build": "202611151826",
- "ver": "1.2",
+ "build": "202611151853",
+ "ver": "1.3",
  "notes": [
-  "Sécurité : chaque projet importé ou enregistré est vérifié et borné ; plus aucune valeur ne peut injecter de code",
-  "Documents au nom de l'entreprise émettrice, avec mention de responsabilité",
-  "Libellés « Contrôles OK » au lieu de « Conforme » ; domaine de validité : 250 A au plus, sinon pas de note de calcul",
-  "AGCP au moins égal au plus gros disjoncteur aval, puissance de pointe, type F, moteurs (V1.1)"
+  "Licence MUPGLOBAL : clé signée liée à l'appareil, même format et même générateur que MUPGLOBAL PV",
+  "Essai gratuit : 15 jours, 3 projets, documents marqués « version d'essai »",
+  "Documents au nom du titulaire de la licence (non modifiable)",
+  "Suspension à distance par la liste de blocage MUPGLOBAL",
+  "Sécurité des fichiers importés, domaine de validité (V1.2)"
  ]
 }
