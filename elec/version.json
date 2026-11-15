@@ -1,0 +1,12 @@
+{
+ "build": "202611151756",
+ "ver": "1.1",
+ "notes": [
+  "AGCP jamais plus petit que le plus gros disjoncteur aval, différentiel 500 mA type S",
+  "Puissance de pointe : appareils spécialisés à 100 %, ks seulement sur l'éclairage et les prises",
+  "Différentiels type F pour les climatiseurs (NF C 15-100, édition 2024)",
+  "Moteurs : rendement et chute de tension au démarrage",
+  "Note de calcul et devis en PDF, export, sauvegarde complète et import de projets",
+  "Application installable, utilisable hors connexion"
+ ]
+}

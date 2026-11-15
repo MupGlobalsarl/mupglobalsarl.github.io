@@ -1,0 +1,43 @@
+{
+ "id": "./",
+ "name": "MupGlobal Électricité – Bâtiment",
+ "short_name": "MG Électricité",
+ "description": "Dimensionnement électrique de bâtiment, schémas, réseau de terre et devis – MUPGLOBAL SARL, Lubumbashi",
+ "lang": "fr",
+ "start_url": "./index.html",
+ "scope": "./",
+ "display": "standalone",
+ "orientation": "portrait",
+ "background_color": "#1B2833",
+ "theme_color": "#1B2833",
+ "categories": [
+  "productivity",
+  "utilities"
+ ],
+ "icons": [
+  {
+   "src": "icon-192.png",
+   "sizes": "192x192",
+   "type": "image/png",
+   "purpose": "any"
+  },
+  {
+   "src": "icon-512.png",
+   "sizes": "512x512",
+   "type": "image/png",
+   "purpose": "any"
+  },
+  {
+   "src": "icon-maskable-192.png",
+   "sizes": "192x192",
+   "type": "image/png",
+   "purpose": "maskable"
+  },
+  {
+   "src": "icon-maskable-512.png",
+   "sizes": "512x512",
+   "type": "image/png",
+   "purpose": "maskable"
+  }
+ ]
+}
